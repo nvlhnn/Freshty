@@ -1,95 +1,112 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
 
-export default function Home() {
+import { useState, useEffect, useRef, useCallback } from "react";
+import ProductCard from "@/components/ProductCard";
+
+export default function ProductPage() {
+  const [products, setProducts] = useState([]);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const hasMounted = useRef(false); // Ref to track mounting
+  const observer = useRef(); // Ref for Intersection Observer
+
+  console.log("Loaded Environment Variables:", process.env);
+
+  console.log("API URL:", process.env.NEXT_PUBLIC_PRODUCT_API_URL);
+
+  const fetchProducts = async (page = 0) => {
+    if (isLoading || page >= totalPages) return;
+
+    setIsLoading(true);
+    setError(null); // Reset error state
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_PRODUCT_API_URL}/products?page=${page}`
+      );
+      if (!response.ok) {
+        throw new Error("Failed to fetch products");
+      }
+      const result = await response.json();
+
+      setProducts((prevProducts) => {
+        const newProducts = result.products;
+        const uniqueProducts = [
+          ...prevProducts,
+          ...newProducts.filter(
+            (newProduct) =>
+              !prevProducts.some(
+                (existingProduct) =>
+                  existingProduct.productId === newProduct.productId // Use productId consistently
+              )
+          ),
+        ];
+        return uniqueProducts;
+      });
+
+      setTotalPages(result.totalPages);
+      setCurrentPage((prevPage) => prevPage + 1); // Increment page correctly
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      setError("Failed to load products. Please try again later.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!hasMounted.current) {
+      fetchProducts(); // Load the first page initially
+      hasMounted.current = true;
+    }
+  }, []);
+
+  const lastProductRef = useCallback(
+    (node) => {
+      if (isLoading) return;
+      if (observer.current) observer.current.disconnect();
+
+      observer.current = new IntersectionObserver(
+        (entries) => {
+          if (entries[0].isIntersecting && currentPage < totalPages) {
+            fetchProducts(currentPage);
+          }
+        },
+        {
+          root: null, // viewport
+          rootMargin: "0px",
+          threshold: 1.0,
+        }
+      );
+
+      if (node) observer.current.observe(node);
+    },
+    [isLoading, currentPage, totalPages]
+  );
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>app/page.js</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
-
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4 max-w-7xl mx-auto">
+      {error && (
+        <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">{error}</div>
+      )}
+      {products.map((product, index) => {
+        if (index === products.length - 1) {
+          return (
+            <div ref={lastProductRef} key={product.productId}>
+              <ProductCard product={product} />
+            </div>
+          );
+        } else {
+          return <ProductCard key={product.productId} product={product} />;
+        }
+      })}
+      {isLoading && (
+        <div className="flex justify-center items-center col-span-full">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-green-500"></div>
         </div>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
     </div>
   );
 }
