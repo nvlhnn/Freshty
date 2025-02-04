@@ -3,7 +3,9 @@
 import Button from "@/components/Button";
 import { useEffect, useState, useRef, useCallback } from "react";
 
-import { getToken } from "@/lib/cookie";
+import { getToken, getUser } from "@/lib/cookie";
+import { Client } from "@stomp/stompjs";
+import SockJS from "sockjs-client";
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -12,6 +14,7 @@ export default function OrdersPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const observer = useRef();
+  const clientRef = useRef(null); // Ref for the WebSocket client
 
   // Fetch orders from API
   const fetchOrders = async (page) => {
@@ -55,6 +58,35 @@ export default function OrdersPage() {
   // Initial fetch
   useEffect(() => {
     fetchOrders(0);
+    const client = new Client({
+      webSocketFactory: () =>
+        new SockJS(`${process.env.NEXT_PUBLIC_ORDER_API_URL}/ws`),
+      debug: (str) => console.log(str),
+      reconnectDelay: 5000, // Attempt reconnection every 5 seconds if disconnected
+      onConnect: () => {
+        console.log("Connected to WebSocket");
+
+        // Subscribe to the topic for new orders
+        client.subscribe(`/topic/order-paid/${getUser().userId}`, (message) => {
+          console.log("WebSocket Message Received:", message.body); // Should log "order created"
+
+          window.location.reload();
+        });
+      },
+      onStompError: (frame) => {
+        console.error("WebSocket error", frame);
+        toast.error("WebSocket connection error.");
+      },
+    });
+
+    client.activate();
+    clientRef.current = client;
+
+    return () => {
+      if (clientRef.current) {
+        clientRef.current.deactivate();
+      }
+    };
   }, []);
 
   // Infinite Scroll - Load more orders when the sentinel is visible
@@ -73,34 +105,34 @@ export default function OrdersPage() {
   );
 
   // Mark order as paid
-  const markAsPaid = async (orderId) => {
-    try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_ORDER_API_URL}/orders/pay/${orderId}`, // Adjust the endpoint as per your API
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${getToken()}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Error marking order as paid: ${response.statusText}`);
-      }
-
-      // Update the order status locally
-      setOrders((prevOrders) =>
-        prevOrders.map((order) =>
-          order.orderId === orderId ? { ...order, orderStatus: "PAID" } : order
-        )
-      );
-      setSelectedOrder(null); // Close the modal after marking as paid
-    } catch (error) {
-      console.error("Mark as Paid Error:", error);
-      // Optionally, display an error message to the user
-    }
+  const markAsPaid = async (invoiceUrl) => {
+    // redirect to invoice page
+    // window.lo(invoiceUrl, "_blank");
+    // try {
+    //   const response = await fetch(
+    //     `${process.env.NEXT_PUBLIC_ORDER_API_URL}/orders/pay/${orderId}`, // Adjust the endpoint as per your API
+    //     {
+    //       method: "POST",
+    //       headers: {
+    //         "Content-Type": "application/json",
+    //         Authorization: `Bearer ${getToken()}`,
+    //       },
+    //     }
+    //   );
+    //   if (!response.ok) {
+    //     throw new Error(`Error marking order as paid: ${response.statusText}`);
+    //   }
+    //   // Update the order status locally
+    //   setOrders((prevOrders) =>
+    //     prevOrders.map((order) =>
+    //       order.orderId === orderId ? { ...order, orderStatus: "PAID" } : order
+    //     )
+    //   );
+    //   setSelectedOrder(null); // Close the modal after marking as paid
+    // } catch (error) {
+    //   console.error("Mark as Paid Error:", error);
+    //   // Optionally, display an error message to the user
+    // }
   };
 
   return (
@@ -149,8 +181,8 @@ export default function OrdersPage() {
               <div className="flex justify-end">
                 {order.orderStatus !== "PAID" && (
                   <Button
-                    onClick={() => setSelectedOrder(order)}
-                    className="w-36 py-1 px-3 rounded border border-green-prime"
+                    onClick={() => window.open(order.invoiceUrl, "_blank")}
+                    className="w-28 py-1 px-3 rounded border border-green-prime"
                   >
                     Pay
                   </Button>
@@ -185,7 +217,7 @@ export default function OrdersPage() {
                 Cancel
               </button>
               <button
-                onClick={() => markAsPaid(selectedOrder.orderId)}
+                onClick={() => markAsPaid(order.invoiceUrl)}
                 className="bg-green-500 text-white py-1 px-4 rounded hover:bg-green-600"
               >
                 Pay

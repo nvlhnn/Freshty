@@ -323,7 +323,7 @@ export default function Navbar() {
                 onClick={handleCheckout}
                 className="bg-green-500 text-white py-1 px-4 rounded hover:bg-green-600"
               >
-                Pay
+                Checkout
               </button>
             </div>
           </div>
